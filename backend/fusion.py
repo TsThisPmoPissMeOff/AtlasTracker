@@ -1,47 +1,46 @@
 from geoclip_model import predict_locations
 from ocr import extract_text
 from exif import extract_exif
-from sun_analysis import estimate_latitude
-from weather import match_weather
+from sun_analysis import score_candidates_by_sun
+from weather import score_candidates_by_weather
 from priors import population_prior
-from refine import BBOX, apply_bounding_box
+from landmarks import detect_landmarks
+from language_detection import detect_language
 
 def analyze_image(image_bytes, bbox=None):
-    if bbox:
-        apply_bounding_box(bbox)
+    exif = extract_exif(image_bytes)
+    text = extract_text(image_bytes)
 
-    exif_data = extract_exif(image_bytes)
-    text_data = extract_text(image_bytes)
+    candidates = predict_locations(image_bytes)
 
-    visual_candidates = predict_locations(image_bytes)
+    sun = score_candidates_by_sun(candidates, exif)
+    weather = score_candidates_by_weather(candidates, exif)
+    pop = population_prior(candidates)
+    landmark_score = detect_landmarks(image_bytes)
+    lang = detect_language(text)
 
-    sun_scores = estimate_latitude(image_bytes, exif_data)
-    weather_scores = match_weather(image_bytes, exif_data)
-    prior_scores = population_prior(visual_candidates)
+    final = []
+    for c in candidates:
+        lat, lon = c["coords"]["lat"], c["coords"]["lon"]
 
-    final_candidates = []
-    for c in visual_candidates:
-        lat, lon = c['coords']['lat'], c['coords']['lon']
         score = (
-            0.5 * c['score'] +
-            0.2 * sun_scores.get(round(lat), 0) +
-            0.2 * weather_scores.get((round(lat), round(lon)), 0) +
-            0.1 * prior_scores.get((lat, lon), 0)
+            0.65 * c["score"] +
+            0.08 * sun.get((lat, lon), 0) +
+            0.07 * weather.get((lat, lon), 0) +
+            0.10 * pop.get((lat, lon), 0) +
+            0.10 * landmark_score
         )
-        final_candidates.append({**c, 'final_score': score})
 
-    final_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+        final.append({**c, "final_score": score})
 
-    explanation = {
-        'EXIF': exif_data,
-        'OCR': text_data,
-        'Visual': [c['score'] for c in visual_candidates],
-        'Sun/Shadow': sun_scores,
-        'Weather': weather_scores,
-        'Population': prior_scores
-    }
+    final.sort(key=lambda x: x["final_score"], reverse=True)
 
     return {
-        'candidates': final_candidates[:5],
-        'explanation': explanation
+        "candidates": final[:5],
+        "explanation": {
+            "language": lang,
+            "landmark_score": landmark_score,
+            "exif": exif,
+            "ocr": text
+        }
     }
