@@ -2,15 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AtlasFinder AI</title>
+    <title>AtlasFinder</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>AtlasFinder AI</h1>
-    <input type="file" id="imageInput">
-    <button onclick="analyzeImage()">Analyze</button>
-    
-    <div id="results"></div>
-</body>
+
+<h1>AtlasFinder – Image Geolocation Analysis</h1>
+
+<!-- Multi-image toggle -->
+<label style="display:block;text-align:center;margin-bottom:10px;">
+    <input type="checkbox" id="multiToggle">
+    Enable Multi-Image Analysis
+</label>
+
+<input
+    type="file"
+    id="imageInput"
+    accept="image/*"
+/>
+
+<button onclick="analyzeImages()">Analyze</button>
+
+<div id="results"></div>
+
 <script src="app.js"></script>
+</body>
 </html>
