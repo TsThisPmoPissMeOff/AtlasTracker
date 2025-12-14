@@ -1,85 +1,95 @@
-let lastResults = null;  // Store last analysis for refinement
+async function analyzeImages(bbox = null) {
+    const input = document.getElementById("imageInput");
+    const multi = document.getElementById("multiToggle").checked;
+    const results = document.getElementById("results");
 
-// Main analyze function
-async function analyzeImage(bbox=null) {
-    const fileInput = document.getElementById('imageInput');
-    if(fileInput.files.length === 0) {
-        alert("Select an image first!");
+    if (!input.files.length) {
+        alert("Please select at least one image.");
         return;
     }
 
     const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    if(bbox) formData.append("bbox", bbox);
 
-    // Update UI
-    const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = "<p>Analyzing... please wait.</p>";
+    if (multi) {
+        // Multi-image mode
+        for (let file of input.files) {
+            formData.append("files", file);
+        }
+    } else {
+        // Single-image mode
+        formData.append("file", input.files[0]);
+    }
+
+    if (bbox) {
+        formData.append("bbox", bbox);
+    }
+
+    results.innerHTML = "Analyzing…";
 
     try {
-        const response = await fetch("https://<YOUR_BACKEND_URL>/analyze", {
+        const response = await fetch("https://YOUR_BACKEND_URL/analyze", {
             method: "POST",
             body: formData
         });
+
         const data = await response.json();
-        lastResults = data;
         displayResults(data);
+
     } catch (err) {
-        resultsDiv.innerHTML = `<p>Error: ${err}</p>`;
+        results.innerHTML = "Error: " + err;
     }
 }
 
-// Display results with explanations, Google Maps, and refine button
-function displayResults(data){
-    const div = document.getElementById('results');
-    div.innerHTML = "";
+function displayResults(data) {
+    const container = document.getElementById("results");
+    container.innerHTML = "";
+
+    if (!data.candidates || data.candidates.length === 0) {
+        container.innerHTML = "<p>No candidates found.</p>";
+        return;
+    }
 
     data.candidates.forEach((c, i) => {
-        // Candidate header
-        const header = document.createElement('p');
-        header.innerText = `Candidate ${i+1}: ${c.coords.lat.toFixed(5)}, ${c.coords.lon.toFixed(5)}, Score: ${c.final_score.toFixed(2)}`;
-        div.appendChild(header);
+        const div = document.createElement("div");
 
-        // Google Maps button
-        const btnMap = document.createElement('button');
-        btnMap.innerText = "Open in Google Maps";
-        btnMap.onclick = () => window.open(`https://www.google.com/maps?q=${c.coords.lat},${c.coords.lon}`);
-        div.appendChild(btnMap);
+        div.innerHTML = `
+            <p><strong>Candidate ${i + 1}</strong></p>
+            <p>Latitude: ${c.coords.lat.toFixed(5)}</p>
+            <p>Longitude: ${c.coords.lon.toFixed(5)}</p>
+            <p>Score: ${c.final_score.toFixed(3)}</p>
 
-        // Explanation dropdown
-        const explanationDropdown = document.createElement('details');
-        explanationDropdown.innerHTML = `<summary>Explanation</summary><pre>${JSON.stringify(data.explanation, null, 2)}</pre>`;
-        div.appendChild(explanationDropdown);
+            <button onclick="openMap(${c.coords.lat}, ${c.coords.lon})">
+                Open in Google Maps
+            </button>
 
-        // Refine button
-        const btnRefine = document.createElement('button');
-        btnRefine.innerText = "Refine using this candidate";
-        btnRefine.onclick = () => refineCandidate(c);
-        div.appendChild(btnRefine);
+            <button onclick="refine(${c.coords.lat}, ${c.coords.lon})">
+                Refine Location
+            </button>
 
-        div.appendChild(document.createElement('hr'));
+            <details>
+                <summary>Explanation</summary>
+                <pre>${JSON.stringify(data.explanation, null, 2)}</pre>
+            </details>
+
+            <hr>
+        `;
+
+        container.appendChild(div);
     });
 }
 
-// Iterative refinement function
-function refineCandidate(candidate) {
-    if(!candidate || !candidate.coords) return;
-
-    // Define bounding box around candidate (+/- small delta)
-    const delta = 0.05; // ~5 km box; adjust as needed
-    const lat = candidate.coords.lat;
-    const lon = candidate.coords.lon;
-    const bbox = `${lat-delta},${lon-delta},${lat+delta},${lon+delta}`;
-
-    alert(`Refining search within ~5km of candidate location.`);
-
-    // Re-run analyzeImage with bounding box
-    analyzeImage(bbox);
+function openMap(lat, lon) {
+    window.open(`https://www.google.com/maps?q=${lat},${lon}`);
 }
 
-// Optional: drag & drop support
-document.getElementById('imageInput').addEventListener('dragover', e => e.preventDefault());
-document.getElementById('imageInput').addEventListener('drop', e => {
-    e.preventDefault();
-    document.getElementById('imageInput').files = e.dataTransfer.files;
+function refine(lat, lon) {
+    const delta = 0.05;
+    const bbox = `${lat - delta},${lon - delta},${lat + delta},${lon + delta}`;
+    analyzeImages(bbox);
+}
+
+/* Enable multiple file selection dynamically */
+document.getElementById("multiToggle").addEventListener("change", (e) => {
+    const input = document.getElementById("imageInput");
+    input.multiple = e.target.checked;
 });
