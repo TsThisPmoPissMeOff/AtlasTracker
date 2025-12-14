@@ -7,32 +7,26 @@ from priors import population_prior
 from refine import BBOX, apply_bounding_box
 
 def analyze_image(image_bytes, bbox=None):
-    # Optional refinement
     if bbox:
         apply_bounding_box(bbox)
 
-    # Metadata extraction
     exif_data = extract_exif(image_bytes)
     text_data = extract_text(image_bytes)
 
-    # Real visual geolocation
     visual_candidates = predict_locations(image_bytes)
 
-    # Sun/shadow & weather scores (currently empty stubs)
-    lat_estimate = estimate_latitude(image_bytes, exif_data)
-    weather_score = match_weather(image_bytes, exif_data)
+    sun_scores = estimate_latitude(image_bytes, exif_data)
+    weather_scores = match_weather(image_bytes, exif_data)
+    prior_scores = population_prior(visual_candidates)
 
-    # Population priors
-    prior_score = population_prior(visual_candidates)
-
-    # Weighted fusion of all scores
     final_candidates = []
     for c in visual_candidates:
+        lat, lon = c['coords']['lat'], c['coords']['lon']
         score = (
-            0.4 * c['score'] +
-            0.2 * lat_estimate.get(str(c['coords']),0) +
-            0.2 * weather_score.get(str(c['coords']),0) +
-            0.2 * prior_score.get(str(c['coords']),0)
+            0.5 * c['score'] +
+            0.2 * sun_scores.get(round(lat), 0) +
+            0.2 * weather_scores.get((round(lat), round(lon)), 0) +
+            0.1 * prior_scores.get((lat, lon), 0)
         )
         final_candidates.append({**c, 'final_score': score})
 
@@ -42,9 +36,9 @@ def analyze_image(image_bytes, bbox=None):
         'EXIF': exif_data,
         'OCR': text_data,
         'Visual': [c['score'] for c in visual_candidates],
-        'Sun/Shadow': lat_estimate,
-        'Weather': weather_score,
-        'Population': prior_score
+        'Sun/Shadow': sun_scores,
+        'Weather': weather_scores,
+        'Population': prior_scores
     }
 
     return {
