@@ -1,21 +1,35 @@
-import random
+import io
+from PIL import Image
+import torch
+from geoclip import GeoCLIP
 
-BBOX = None  # optional bounding box
+_model = None
+
+def _load_model():
+    global _model
+    if _model is None:
+        _model = GeoCLIP()
+    return _model
 
 def predict_locations(image_bytes, top_k=5):
     """
-    Dummy GeoCLIP stub.
-    Replace with actual model if desired.
-    Returns list of candidates with fake coordinates and scores.
+    Use real GeoCLIP to generate geolocation predictions.
+    Returns a list of candidates with 'coords' and 'score'.
     """
-    candidates = []
-    for i in range(top_k):
-        lat = random.uniform(-90, 90)
-        lon = random.uniform(-180, 180)
-        if BBOX:
-            lat_min, lon_min, lat_max, lon_max = BBOX
-            lat = random.uniform(lat_min, lat_max)
-            lon = random.uniform(lon_min, lon_max)
-        score = random.uniform(0.5, 1.0)
-        candidates.append({'coords': {'lat': lat, 'lon': lon}, 'score': score})
-    return candidates
+    model = _load_model()
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    temp_path = "/tmp/temp_image.png"
+    image.save(temp_path)
+
+    try:
+        top_coords, top_probs = model.predict(temp_path, top_k=top_k)
+        results = [
+            {"coords": {"lat": float(lat), "lon": float(lon)}, "score": float(prob)}
+            for (lat, lon), prob in zip(top_coords, top_probs)
+        ]
+    except Exception as e:
+        results = []
+        print("GeoCLIP prediction error:", e)
+
+    return results
