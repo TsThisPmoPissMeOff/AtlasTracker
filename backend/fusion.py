@@ -12,12 +12,16 @@ from language_detection import detect_language
 from math import sqrt
 
 
-# ---------- Helper: distance between coordinates (km approx) ----------
+# --------------------------------------------------
+# Helper: approximate distance between coordinates
+# --------------------------------------------------
 def coord_distance(a, b):
-    return sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+    return sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
 
 
-# ---------- Single-image analysis ----------
+# --------------------------------------------------
+# Single image analysis
+# --------------------------------------------------
 def analyze_single_image(image_bytes):
     exif_data = extract_exif(image_bytes)
     ocr_text = extract_text(image_bytes)
@@ -33,13 +37,14 @@ def analyze_single_image(image_bytes):
     landmark_score = detect_landmarks(image_bytes)
     detected_language = detect_language(ocr_text)
 
-    fused = []
+    fused_candidates = []
+
     for c in candidates:
         lat = c["coords"]["lat"]
         lon = c["coords"]["lon"]
         key = (lat, lon)
 
-        score = (
+        final_score = (
             0.65 * c["score"] +
             0.08 * sun_scores.get(key, 0.0) +
             0.07 * weather_scores.get(key, 0.0) +
@@ -47,36 +52,45 @@ def analyze_single_image(image_bytes):
             0.10 * landmark_score
         )
 
-        fused.append({
+        fused_candidates.append({
             "coords": c["coords"],
-            "final_score": score
+            "geo_score": c["score"],
+            "final_score": round(final_score, 4)
         })
 
-    return fused, {
+    return fused_candidates, {
         "landmark_score": landmark_score,
-        "language": detected_language,
-        "ocr_excerpt": ocr_text[:200],
+        "detected_language": detected_language,
+        "ocr_excerpt": ocr_text[:300],
         "exif_present": bool(exif_data)
     }
 
 
-# ---------- Multi-image fusion ----------
+# --------------------------------------------------
+# Multi-image fusion
+# --------------------------------------------------
 def fuse_multiple_images(results, merge_threshold=0.5):
     """
     Merge candidates from multiple images.
-    merge_threshold: degrees (~0.5 ≈ 50km)
+
+    merge_threshold:
+      Approx degrees (~0.5 ≈ 50 km)
     """
+
     merged = []
 
-    for candidates in results:
-        for c in candidates:
+    for candidate_list in results:
+        for c in candidate_list:
             coord = (c["coords"]["lat"], c["coords"]["lon"])
             matched = False
 
             for m in merged:
                 mcoord = (m["coords"]["lat"], m["coords"]["lon"])
                 if coord_distance(coord, mcoord) < merge_threshold:
-                    m["final_score"] = (m["final_score"] + c["final_score"]) / 2
+                    m["final_score"] = round(
+                        (m["final_score"] + c["final_score"]) / 2,
+                        4
+                    )
                     matched = True
                     break
 
@@ -87,27 +101,33 @@ def fuse_multiple_images(results, merge_threshold=0.5):
     return merged
 
 
-# ---------- Public API ----------
+# --------------------------------------------------
+# Public API
+# --------------------------------------------------
 def analyze_images(image_bytes_list):
     """
     image_bytes_list:
-      - list with 1 image → normal mode
-      - list with N images → multi-image fusion
+      - 1 image  → single-image mode
+      - N images → multi-image fusion
     """
 
     per_image_results = []
     explanations = []
 
-    for img in image_bytes_list:
-        candidates, explanation = analyze_single_image(img)
+    for img_bytes in image_bytes_list:
+        candidates, explanation = analyze_single_image(img_bytes)
         if candidates:
             per_image_results.append(candidates)
             explanations.append(explanation)
 
     if not per_image_results:
-        return {"candidates": [], "explanation": {"error": "No candidates found"}}
+        return {
+            "candidates": [],
+            "explanation": {
+                "error": "No valid candidates found"
+            }
+        }
 
-    # Fuse if multiple images, else return single-image result
     if len(per_image_results) > 1:
         fused_candidates = fuse_multiple_images(per_image_results)
         mode = "multi-image"
